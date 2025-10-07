@@ -1,0 +1,72 @@
+{
+  "market_share_domestic_2024": [
+    {
+      "company": "LATAM",
+      "value": 39.3
+    },
+    {
+      "company": "GOL",
+      "value": 30.4
+    },
+    {
+      "company": "Azul",
+      "value": 30.0
+    },
+    {
+      "company": "Outras",
+      "value": 0.3 
+    }
+  ],
+  "domestic_destinations_2025": [
+    {
+      "company": "Azul",
+      "value": 129
+    },
+    {
+      "company": "GOL",
+      "value": 64
+    },
+    {
+      "company": "LATAM",
+      "value": 43
+    }
+  ],
+  "international_destinations_2025": [
+    {
+      "company": "LATAM",
+      "value": 25
+    },
+    {
+      "company": "GOL",
+      "value": 19
+    },
+    {
+      "company": "Azul",
+      "value": 12
+    }
+  ],
+  "on_time_performance_2024": [
+    {
+      "company": "GOL",
+      "value": 95.3
+    },
+    {
+      "company": "LATAM",
+      "value": 93.7
+    },
+    {
+      "company": "Azul",
+      "value": 91.9
+    }
+  ],
+  "flights_brazil_total_2024": [
+    {
+      "type": "Domésticos",
+      "value": 97600000
+    },
+    {
+      "type": "Internacionais",
+      "value": 27200000
+    }
+  ]
+}

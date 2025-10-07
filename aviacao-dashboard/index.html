@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard Aviação BR — LATAM | GOL | Azul</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#121a33; --ink:#e8eefc; --muted:#a8b3d1;
+      --accent:#6aa5ff; --accent2:#8be0b8; --warn:#ffce6a;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+      background: radial-gradient(1200px 600px at 20% -10%, #18254d 0%, transparent 70%),
+                  radial-gradient(1200px 600px at 120% 10%, #153a4a 0%, transparent 70%), var(--bg);
+      color:var(--ink);
+      min-height:100dvh;
+    }
+    header{ padding:24px 20px 8px; }
+    .title{font-weight:800; letter-spacing:0.2px; font-size:clamp(20px,3.6vw,28px)}
+    .sub{color:var(--muted); font-size:14px}
+    .container{ max-width:1100px; margin:0 auto; padding:16px 20px 48px; }
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border:1px solid rgba(255,255,255,0.08);
+      border-radius:18px; padding:16px; box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      backdrop-filter: blur(6px);
+    }
+    .row{display:flex; gap:16px; flex-wrap:wrap; align-items:center; justify-content:space-between}
+    .controls{display:flex; gap:12px; align-items:center}
+    select{
+      background:var(--panel); color:var(--ink); border:1px solid rgba(255,255,255,0.12);
+      padding:10px 12px; border-radius:12px; font-weight:600;
+      outline:none; transition:0.25s border, 0.25s box-shadow;
+    }
+    select:focus{border-color:var(--accent); box-shadow:0 0 0 4px rgba(106,165,255,0.15)}
+    .kpi{display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:12px; margin-top:12px}
+    .kpi .box{
+      background:var(--panel); border:1px solid rgba(255,255,255,0.08);
+      border-radius:14px; padding:12px 14px;
+    }
+    .box .label{color:var(--muted); font-size:12px; letter-spacing:.3px}
+    .box .value{font-weight:800; font-size:22px; margin-top:6px}
+    .chart-wrap{
+      position:relative; overflow:hidden; min-height:420px; display:grid; place-items:center;
+    }
+    canvas{max-width:100%;}
+    .fade{ opacity:0; transform: translateY(6px); transition: opacity .35s ease, transform .35s ease; }
+    .fade.show{opacity:1; transform: translateY(0)}
+    footer{color:var(--muted); font-size:12px; text-align:center; margin-top:20px}
+    .legend{
+      display:flex; justify-content:center; gap:12px; flex-wrap:wrap;
+      margin-top:12px; color:var(--muted); font-size:13px;
+    }
+    .badge{
+      display:flex; align-items:center; justify-content:center;
+      min-width:120px; /* largura padronizada */
+      padding:6px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background:var(--panel); text-align:center;
+    }
+    a{color:var(--accent)}
+  </style>
+</head>
+<body>
+  <header class="container">
+    <div class="title">Dashboard — Aviação Comercial (Brasil)</div>
+  </header>
+
+  <main class="container">
+    <div class="card">
+      <div class="row">
+        <div class="controls">
+          <label for="view" class="sub">Visualização:</label>
+          <select id="view">
+            <option value="market_share_domestic_2024" selected>1 — Participação no mercado doméstico</option>
+            <option value="domestic_destinations_2025">2 — Destinos nacionais atendidos</option>
+            <option value="international_destinations_2025">3 — Destinos internacionais atendidos</option>
+            <option value="on_time_performance_2024">4 — Taxa de pontualidade</option>
+            <option value="flights_brazil_total_2024">5 — Nº total de passageiros (dom. x int.)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="kpi" id="kpi"></div>
+
+      <!-- legenda custom dinâmica -->
+      <div class="legend" id="legend-dyn" aria-live="polite"></div>
+
+      <div class="chart-wrap">
+        <canvas id="chart" class="fade"></canvas>
+      </div>
+    </div>
+
+    <footer>
+      <p>Fonte base: ANAC, Cirium.</p>
+    </footer>
+  </main>
+
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    const state = {
+      raw: null,
+      chart: null,
+      palette: ["#6aa5ff","#8be0b8","#ffce6a","#e88cff","#f5938d"]
+    };
+
+    async function loadData(){
+      const res = await fetch("data.json");
+      state.raw = await res.json();
+      init();
+    }
+
+    function toCompanyChart(d, label){
+      const arr = [...d].sort((a,b)=> (b.value||0)-(a.value||0));
+      return { labels: arr.map(x=> x.company), values: arr.map(x=> x.value), unit: label };
+    }
+
+    function toFlightsChart(d){
+      const arr = [...d];
+      return { labels: arr.map(x=> x.type), values: arr.map(x=> x.value), unit: "voos" };
+    }
+
+    function buildKPI(key){
+      const box = document.getElementById("kpi");
+      box.innerHTML = "";
+      if(key === "flights_brazil_total_2024"){
+        const total = state.raw[key].reduce((s,x)=>s+x.value,0).toLocaleString("pt-BR");
+        const dom = state.raw[key][0].value.toLocaleString("pt-BR");
+        const intl = state.raw[key][1].value.toLocaleString("pt-BR");
+        box.innerHTML = `
+          <div class="box"><div class="label">Total de passageiros(2024/2025)</div><div class="value">${total}</div></div>
+          <div class="box"><div class="label">Domésticos (2024/2025)</div><div class="value">${dom}</div></div>
+          <div class="box"><div class="label">Internacionais (2024/2025)</div><div class="value">${intl}</div></div>
+        `;
+      } else {
+        const top3 = [...state.raw[key]].sort((a,b)=>(b.value||0)-(a.value||0));
+        top3.forEach((x,i)=>{
+          const v = (typeof x.value==="number") ? (key.includes("market_share") || key.includes("performance") ? x.value.toFixed(2)+"%" : x.value.toLocaleString("pt-BR")) : "-";
+          box.innerHTML += `
+            <div class="box">
+              <div class="label">#${i+1} — ${x.company}</div>
+              <div class="value">${v}</div>
+            </div>`;
+        });
+      }
+    }
+
+    function updateLegend(items){
+      const el = document.getElementById("legend-dyn");
+      if (!el) return;
+      if (!items || !items.length){
+        el.innerHTML = "";
+        el.style.display = "none";
+        return;
+      }
+      el.style.display = "flex";
+      el.innerHTML = items.map(it => `
+        <span class="badge">
+          <span style="display:inline-block;width:10px;height:10px;background:${it.color};border-radius:2px;margin-right:6px;vertical-align:middle"></span>
+          ${it.label}
+        </span>
+      `).join("");
+    }
+
+    function render(key){
+      const canvas = document.getElementById("chart");
+      canvas.classList.remove("show");
+      setTimeout(()=>{
+        if(state.chart){ state.chart.destroy(); }
+        let cfg;
+
+        if(key==="flights_brazil_total_2024"){
+          const t = toFlightsChart(state.raw[key]);
+          cfg = {
+            type: "pie",
+            data: {
+              labels: t.labels,
+              datasets: [{ data: t.values, backgroundColor: state.palette.slice(0, t.labels.length) }]
+            },
+            options: {
+              responsive:true,
+              plugins:{ legend:{ display:true, labels:{ color:"#dbe4ff" } } }
+            }
+          };
+          updateLegend(null);
+        } else {
+          const unit = key.includes("market_share") || key.includes("performance") ? "%" : "unid.";
+          const map = {
+            "market_share_domestic_2024": "Participação — mercado doméstico (2024/2025)",
+            "domestic_destinations_2025": "Destinos nacionais atendidos (2025)",
+            "international_destinations_2025": "Destinos internacionais atendidos (2025)",
+            "on_time_performance_2024": "Pontualidade (chegadas ≤ 15 min) — 2024/2025"
+          };
+          const t = toCompanyChart(state.raw[key], unit);
+          const colors = state.palette.slice(0, t.labels.length);
+
+          cfg = {
+            type: "bar",
+            data: {
+              labels: t.labels,
+              datasets: [{
+                label: map[key],
+                data: t.values,
+                backgroundColor: colors,
+                borderRadius: 10
+              }]
+            },
+            options: {
+              responsive:true,
+              plugins: {
+                legend: { display:false },
+                tooltip: {
+                  callbacks: {
+                    label: (ctx)=>{
+                      const v = ctx.parsed.y;
+                      return (key.includes("market_share") || key.includes("performance"))
+                        ? v.toFixed(2)+"%"
+                        : v.toLocaleString("pt-BR");
+                    }
+                  }
+                }
+              },
+              scales: {
+                x: { ticks: { color:"#dbe4ff" } },
+                y: { ticks: { color:"#dbe4ff" }, grid:{ color:"rgba(255,255,255,.08)" } }
+              },
+              animation: { duration: 450, easing: "easeOutQuart" }
+            }
+          };
+          const items = t.labels.map((lab, i)=> ({ label: lab, color: colors[i] }));
+          updateLegend(items);
+        }
+
+        state.chart = new Chart(canvas.getContext("2d"), cfg);
+        requestAnimationFrame(()=> canvas.classList.add("show"));
+      }, 180);
+      buildKPI(key);
+    }
+
+    function init(){
+      const select = document.getElementById("view");
+      select.addEventListener("change", (e)=> render(e.target.value));
+      render(select.value);
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
